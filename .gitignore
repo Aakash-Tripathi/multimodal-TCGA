@@ -2,6 +2,7 @@ __pycache__
 .vscode
 
 *.env
+*.pth
 
 /data
 /lightning_logs
