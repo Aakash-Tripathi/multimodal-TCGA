@@ -27,18 +27,6 @@ To generate the embeddings for the clinical data, we study the performance of th
 1. [GatorTron](placeholder)
 2. [ClinicalT5](placeholder)
 
-### Pathology WSI
+### Pathology WSI and Radiology images
 
-To generate the embeddings for the pathology WSI, we study the performance of the following foundational models that are trained on the pathology WSI:
-
-1. [REMEDIS](placeholder)
-2. [CLAM]placeholder()
-3. [HIPT](placeholder)
-
-### Radiology images
-
-To generate the embeddings for the radiology images, we study the performance of the following foundational models that are trained on the radiology images:
-
-1. [REMEDIS](placeholder)
-2. [nnU-Net](placeholder)
-3. [TransUNet](placeholder)
+To generate the embeddings for the pathology WSI and radiology images, we use the [REMEDIS](placeholder) model.
