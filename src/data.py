@@ -1,44 +1,62 @@
 import numpy as np
 import torch
+import os
 from torch.utils.data import Dataset
+from torch.nn.utils.rnn import pad_sequence
 
 
-class EmbeddingsDataset(Dataset):
-    def __init__(self, embeddings, device):
-        """
-        Constructor for the Dataset.
-        Args:
-        embeddings (list of numpy arrays): The embeddings generated from clinical reports.
-        """
-        self.embeddings = [torch.tensor(e, dtype=torch.float32) for e in embeddings]
-        self.device = device
+class PatientEmbeddingDataset(Dataset):
+    def __init__(self, embeddings_dir, max_patches):
+        self.embeddings_dir = embeddings_dir
+        self.cases = os.listdir(self.embeddings_dir)
+        self.max_patches = max_patches
 
     def __len__(self):
-        """
-        Returns the total number of samples in the dataset.
-        """
-        return len(self.embeddings)
+        return len(self.cases)
 
     def __getitem__(self, idx):
-        """
-        Retrieves the item (embedding) at the specified index.
-        Args:
-        idx (int): The index of the item to retrieve.
-        Returns:
-        Tensor: The embedding at the specified index.
-        """
-        return self.embeddings[idx].to(self.device)
+        case_id = self.cases[idx]
+        clinical_path = f"{self.embeddings_dir}/{case_id}/ehr.npy"
+        pathology_path = f"{self.embeddings_dir}/{case_id}/pathology.npy"
+        radiology_path = f"{self.embeddings_dir}/{case_id}/radiology.npy"
 
-
-class CombinedDataset(Dataset):
-    def __init__(self, combined_data, labels):
-        self.combined_data = combined_data
-        self.labels = labels
-
-    def __len__(self):
-        return len(self.combined_data)
-
-    def __getitem__(self, idx):
-        return torch.tensor(self.combined_data[idx], dtype=torch.float), torch.tensor(
-            self.labels[idx], dtype=torch.float
+        clinical_emb = (
+            np.load(clinical_path)
+            if os.path.exists(clinical_path)
+            else np.zeros((1024,))
         )
+
+        # load the maximum number of patches specified
+        pathology_emb = (
+            np.load(pathology_path)
+            if os.path.exists(pathology_path)
+            else np.zeros((1, 7, 7, 2048))
+        )
+        pathology_emb = pathology_emb[: self.max_patches]
+
+        radiology_emb = (
+            np.load(radiology_path)
+            if os.path.exists(radiology_path)
+            else np.zeros((1, 7, 7, 2048))
+        )
+        radiology_emb = radiology_emb[: self.max_patches]
+
+        return (
+            torch.tensor(clinical_emb, dtype=torch.float),
+            torch.tensor(pathology_emb, dtype=torch.float),
+            torch.tensor(radiology_emb, dtype=torch.float),
+        )
+
+
+def custom_collate_fn(batch):
+    # Separate clinical, pathology, and radiology embeddings
+    clinical, pathology, radiology = zip(*batch)
+
+    # Pad pathology and radiology sequences to the maximum length in the batch
+    pathology_padded = pad_sequence(pathology, batch_first=True)
+    radiology_padded = pad_sequence(radiology, batch_first=True)
+
+    # Convert clinical embeddings to tensors
+    clinical_tensor = torch.stack(clinical)
+
+    return clinical_tensor, pathology_padded, radiology_padded

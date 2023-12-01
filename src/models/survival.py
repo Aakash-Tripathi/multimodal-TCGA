@@ -1,71 +1,45 @@
-from torch import nn
-import torch
 import torch.nn as nn
-import numpy as np
+import pytorch_lightning as pl
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, random_split
+import torch.optim as optim
 
 
-# Define the DeepSurv neural network model
-class DeepSurv(nn.Module):
-    def __init__(self, input_size):
-        super(DeepSurv, self).__init__()
-        self.fc1 = nn.Linear(input_size, 128)
-        self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(64, 1)
-
-    def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = self.fc3(x)  # Output is a risk score
-        return x
-
-
-# Define the Cox partial likelihood for loss calculation
-def cox_partial_likelihood(risk_scores, event_times, event_occurred):
-    # Ensure the data is sorted by time
-    sorted_indices = np.argsort(-event_times)
-    risk_scores_sorted = risk_scores[sorted_indices]
-    event_occurred_sorted = event_occurred[sorted_indices]
-    risk_scores_cumsum = torch.cumsum(torch.exp(risk_scores_sorted), dim=0)
-
-    # Calculate the Cox partial likelihood
-    likelihood = risk_scores_sorted - torch.log(risk_scores_cumsum)
-    observed_likelihood = (
-        likelihood * event_occurred_sorted
-    )  # consider only observed events
-    negative_log_likelihood = -torch.sum(observed_likelihood) / torch.sum(
-        event_occurred_sorted
-    )
-
-    return negative_log_likelihood
-
-
-class MultiClassSurvivabilityModel(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
-        """
-        Constructor for the SurvivabilityPredictionModel.
-
-        Args:
-        embedding_dim (int): Dimension of the input embeddings.
-        additional_features (int): Number of additional features.
-        hidden_dim (int): Dimension of the hidden layer.
-        output_dim (int): Dimension of the output layer (usually 1 for binary classification).
-        """
-        super(MultiClassSurvivabilityModel, self).__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(hidden_dim, output_dim)
+class DeepSurv(pl.LightningModule):
+    def __init__(self, lr=0.001, dropout=0.1):
+        super().__init__()
+        self.lr = lr
+        self.fc1 = nn.Linear(1024, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, 1)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        """
-        Forward pass of the model.
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = F.relu(self.fc2(x))
+        return self.fc3(x)
 
-        Args:
-        x (Tensor): Input tensor (combined embeddings and additional features).
+    def training_step(self, batch, batch_idx):
+        inputs, labels = batch
+        outputs = self(inputs)
+        loss = F.mse_loss(outputs, labels.unsqueeze(1))
+        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        return loss
 
-        Returns:
-        Tensor: Output tensor representing survivability prediction.
-        """
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-        return x
+    def validation_step(self, batch, batch_idx):
+        inputs, labels = batch
+        outputs = self(inputs)
+        loss = F.mse_loss(outputs, labels.unsqueeze(1))
+        self.log("val_loss", loss, on_step=True, on_epoch=True)
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        inputs, labels = batch
+        outputs = self(inputs)
+        loss = F.mse_loss(outputs, labels.unsqueeze(1))
+        self.log("test_loss", loss)
+        return loss
+
+    def configure_optimizers(self):
+        return optim.Adam(self.parameters(), lr=self.lr)
